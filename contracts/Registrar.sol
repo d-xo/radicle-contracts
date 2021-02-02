@@ -19,11 +19,14 @@ contract Registrar {
     /// The Radicle ERC20 token.
     ERC20Burnable public immutable rad;
 
-    /// The namehash of the node in the `eth` TLD, eg. namehash("radicle.eth").
-    bytes32 public immutable domain;
+    // The namehash of the eth tld
+    bytes32 public constant ethNode = keccak256(abi.encodePacked(bytes32(0), keccak256("eth")));
 
-    /// The token ID for the node in the `eth` TLD, eg. sha256("radicle").
-    uint256 public immutable tokenId;
+    /// The namehash of the node in the `eth` TLD
+    bytes32 public constant domain = keccak256(abi.encodePacked(ethNode, keccak256("radicle")));
+
+    /// The token ID for the node in the `eth` TLD
+    uint256 public constant tokenId = uint(keccak256("radicle"));
 
     /// Registration fee in *USD*.
     uint256 public registrationFeeUsd = 10;
@@ -45,44 +48,23 @@ contract Registrar {
 
     constructor(
         ENS _ens,
-        bytes32 ethDomainNameHash,
-        uint256 ethDomainTokenId,
-        address _oracleAddress,
-        address _exchangeAddress,
         ERC20Burnable _rad,
         address adminAddress
     ) {
         ens = _ens;
-        oracleAddress = _oracleAddress;
-        exchangeAddress = _exchangeAddress;
         rad = _rad;
-        domain = ethDomainNameHash;
-        tokenId = ethDomainTokenId;
         admin = adminAddress;
     }
 
-    /// Register a subdomain using ether.
-    function registerEth(string memory, address) public payable {
-        revert("Registrar::registerEth: Registration using ETH is not yet available");
-    }
-
     /// Register a subdomain using radicle tokens.
-    function registerRad(string memory name, address owner) public {
-        uint256 fee = registrationFeeRad;
+    function register(string calldata name, address owner) external {
+        uint256 fee   = registrationFeeRad;
 
-        require(rad.balanceOf(msg.sender) >= fee, "Transaction includes registration fee");
-        require(valid(name), "Name must be valid");
-
-        _register(keccak256(bytes(name)), owner);
+        require(valid(name), "Registrar::register: name must be valid");
+        require(available(name), "Registrar::register: name must be available");
+        require(rad.balanceOf(msg.sender) >= fee, "Registrar::register: insufficient funds");
 
         rad.burnFrom(msg.sender, fee);
-    }
-
-    function _register(bytes32 label, address owner) private {
-        bytes32 node = namehash(domain, label);
-
-        require(!ens.recordExists(node), "Registrar::_register: name must be available");
-
         ens.setSubnodeOwner(domain, label, owner);
 
         emit NameRegistered(label, owner);
@@ -99,7 +81,7 @@ contract Registrar {
         bytes32 label = keccak256(bytes(name));
         bytes32 node = namehash(domain, label);
 
-        return valid(name) && !ens.recordExists(node);
+        return !ens.recordExists(node);
     }
 
     /// Get the "namehash" of a label.
@@ -107,39 +89,11 @@ contract Registrar {
         return keccak256(abi.encodePacked(parent, label));
     }
 
-    /// Registration fee in ether.
-    function registrationFeeEth() public pure returns (uint256) {
-        revert("Registrar::registrationFeeEth: Registration using ETH is not yet available");
-    }
-
     // ADMIN FUNCTIONS
-
-    /// Set the USD registration fee.
-    function setUsdRegistrationFee(uint256 fee) public adminOnly {
-        registrationFeeUsd = fee;
-    }
 
     /// Set the radicle registration fee.
     function setRadRegistrationFee(uint256 fee) public adminOnly {
         registrationFeeRad = fee;
-    }
-
-    /// Set the price oracle.
-    function setPriceOracle(address _oracleAddress) public adminOnly {
-        require(
-            oracleAddress != address(0),
-            "Registrar::setPriceOracle: oracle address cannot be zero"
-        );
-        oracleAddress = _oracleAddress;
-    }
-
-    /// Set the exchange.
-    function setExchange(address _exchangeAddress) public adminOnly {
-        require(
-            exchangeAddress != address(0),
-            "Registrar::setExchange: exchange address cannot be zero"
-        );
-        exchangeAddress = _exchangeAddress;
     }
 
     /// Set the owner of the domain.
